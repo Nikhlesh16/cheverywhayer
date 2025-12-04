@@ -1,0 +1,93 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String     @id @default(cuid())
+  email     String     @unique
+  password  String
+  name      String?
+  avatar    String?    // Profile photo URL
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  // Relations
+  regions   RegionMembership[]
+  posts     Post[]
+
+  @@map("users")
+}
+
+model Workspace {
+  id          String   @id @default(cuid())
+  h3Index     String   @unique // H3 hexagon index at resolution 8
+  name        String?
+  description String?
+  color       String?  // Auto-generated color for workspace icon
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  posts     Post[]
+  members   RegionMembership[]
+
+  @@map("workspaces")
+}
+
+model Post {
+  id          String   @id @default(cuid())
+  content     String
+  imageUrl    String?  // Optional image attachment
+  latitude    Float?   // Optional location latitude
+  longitude   Float?   // Optional location longitude
+  locationName String? // Optional location name/address
+  replyToId   String?  // ID of post being replied to
+  isDeleted   Boolean  @default(false) // Soft delete
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Foreign keys
+  userId      String
+  workspaceId String
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  replyTo   Post?    @relation("PostReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   Post[]   @relation("PostReplies")
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([replyToId])
+  @@map("posts")
+}
+
+model RegionMembership {
+  id            String   @id @default(cuid())
+  userId        String
+  workspaceId   String
+  latitude      Float    // User's last known location
+  longitude     Float
+  isPinned      Boolean  @default(false)  // User can pin favorite workspaces
+  customName    String?  // User's custom name for this workspace
+  lastVisitedAt DateTime @default(now())  // Track last visit for unread indicator
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
+  @@index([userId])
+  @@index([workspaceId])
+  @@map("region_memberships")
+}

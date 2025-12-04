@@ -1,184 +1,402 @@
-# Hyperlocal Tiles MVP
+# HyperLocal - H3-Based Hyperlocal Workspace System
 
-A serverless hyperlocal community web app where the world map is divided into 5 km × 5 km tiles. Each tile acts as a community feed (like WhatsApp groups or Slack channels) where anyone can view posts and authenticated users can share updates or ask questions.
+A scalable, modular system for creating hyperlocal communities using H3 hexagonal tiling. Users can interact with 5 km hexagonal regions on an interactive map, post updates, and communicate with others in their region.
 
-## Project Structure
+## 🌍 System Architecture
+
+### Tech Stack
+
+**Frontend:**
+- Next.js 14 with TypeScript
+- React-Leaflet for interactive mapping
+- Tailwind CSS for styling
+- Zustand for state management
+- Socket.io-client for real-time updates
+- H3.js for geospatial grid calculations
+
+**Backend:**
+- NestJS with TypeScript
+- PostgreSQL for persistent storage
+- Prisma ORM for database management
+- Redis for caching and pub/sub
+- Socket.io for WebSocket communication
+- JWT authentication
+
+**Infrastructure:**
+- Docker & Docker Compose for containerization
+- Nginx for reverse proxy and load balancing
+- PostgreSQL 16 Alpine
+- Redis 7 Alpine
+
+## 📁 Project Structure
 
 ```
 ├── backend/
-│   ├── template.yaml          # AWS SAM template (Cognito, DynamoDB, S3, Lambda, API Gateway)
-│   ├── package.json
 │   ├── src/
-│   │   ├── handlers/          # Lambda function handlers
-│   │   │   ├── presign.js     # Generates S3 presigned upload URLs
-│   │   │   ├── createPost.js
-│   │   │   ├── fetchPosts.js
-│   │   │   ├── addComment.js
-│   │   │   ├── fetchComments.js
-│   │   │   └── getProfile.js
-│   │   └── utils/
-│   │       └── tile.js        # Web Mercator tile ID calculation
-│   └── mock-server/           # Local Express mock API
-│       ├── package.json
-│       └── index.js
-├── frontend/
-│   ├── index.html
+│   │   ├── auth/                 # JWT authentication
+│   │   ├── gateway/              # Socket.io gateway
+│   │   ├── posts/                # Post creation/fetching
+│   │   ├── workspaces/           # H3-based workspace management
+│   │   ├── regions/              # Region membership
+│   │   ├── prisma/               # Database service
+│   │   ├── redis/                # Redis service
+│   │   ├── app.module.ts         # Main app module
+│   │   └── main.ts               # Entry point
+│   ├── prisma/
+│   │   └── schema.prisma         # Database schema
 │   ├── package.json
-│   ├── vite.config.js
-│   ├── .env.example
-│   └── src/
-│       ├── main.jsx
-│       ├── App.jsx
-│       ├── styles.css
-│       ├── utils/tile.js
-│       └── components/
-│           ├── AuthPanel.jsx
-│           ├── MapView.jsx
-│           ├── FeedPanel.jsx
-│           ├── Composer.jsx
-│           └── PostItem.jsx
+│   ├── tsconfig.json
+│   └── .env.example
+│
+├── frontend/
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── layout.tsx        # Root layout
+│   │   │   ├── page.tsx          # Main page
+│   │   │   └── globals.css       # Global styles
+│   │   ├── components/
+│   │   │   ├── MapView.tsx       # Interactive H3 map
+│   │   │   ├── FeedPanel.tsx     # Post feed
+│   │   │   ├── AuthPanel.tsx     # Login/Register
+│   │   │   └── Composer.tsx      # Post composer
+│   │   ├── hooks/
+│   │   │   └── useSocket.ts      # Socket.io hook
+│   │   ├── lib/
+│   │   │   └── api.ts            # API client
+│   │   ├── store/
+│   │   │   ├── auth.ts           # Auth store
+│   │   │   └── region.ts         # Region store
+│   │   └── utils/
+│   │       └── h3.ts             # H3 utilities
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── next.config.js
+│   ├── tailwind.config.ts
+│   └── .env.example
+│
+├── docker-compose.yml            # Service orchestration
+├── Dockerfile.backend            # Backend container
+├── Dockerfile.frontend           # Frontend container
+├── nginx.conf                    # Reverse proxy config
 └── README.md
 ```
 
----
-
-## Quick Start — Local Development
-
-### 1. Start the mock API server
-
-```powershell
-cd backend/mock-server
-npm install
-npm start
-```
-
-The mock server runs at `http://localhost:3001` and stores posts/comments in memory.
-
-### 2. Start the frontend
-
-```powershell
-cd frontend
-npm install
-copy .env.example .env      # Windows
-# or: cp .env.example .env  # Linux/Mac
-npm run dev
-```
-
-Open `http://localhost:5173` in your browser.
-
-- Click anywhere on the map to select a 5 km tile.
-- You can create posts immediately (mock mode skips real auth).
-- Toggle "Show nearby tiles" to fetch posts from adjacent 3×3 tiles.
-
----
-
-## Deploy to AWS (Free Tier)
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- AWS CLI configured (`aws configure`)
-- AWS SAM CLI installed (`pip install aws-sam-cli` or [installer](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html))
-- Node.js 18+
+- Docker & Docker Compose
+- Node.js 20+ (for local development)
+- PostgreSQL 16+ (for local development)
+- Redis 7+ (for local development)
 
-### 1. Deploy the backend with SAM
+### Option 1: Docker (Recommended)
 
-```powershell
+```bash
+# Clone and navigate to project
+cd cheverywhayer
+
+# Copy environment files
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+
+# Start all services
+docker-compose up -d
+
+# Run database migrations
+docker exec hyperlocal-backend npm run prisma:migrate
+
+# Access the application
+# Frontend: http://localhost:3000
+# Backend API: http://localhost:3001
+# Nginx Proxy: http://localhost
+```
+
+### Option 2: Local Development
+
+#### Backend Setup
+
+```bash
 cd backend
+
+# Install dependencies
 npm install
-sam build
-sam deploy --guided
+
+# Setup environment
+cp .env.example .env
+
+# Update .env with local database connection
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/hyperlocal_db
+
+# Run database migrations
+npm run prisma:migrate
+
+# Generate Prisma client
+npm run prisma:generate
+
+# Start development server
+npm run start:dev
 ```
 
-During `--guided`:
-- Stack name: e.g. `hyperlocal-tiles`
-- Region: e.g. `us-east-1`
-- Accept defaults for the rest
+#### Frontend Setup
 
-After deployment, SAM outputs:
-- `ApiEndpoint` — your API URL
-- `UserPoolId`
-- `UserPoolClientId`
-- `MediaBucketName`
-
-### 2. Configure the frontend
-
-Edit `frontend/.env` (copy from `.env.example`):
-
-```
-VITE_API_URL=https://YOUR_API_ID.execute-api.us-east-1.amazonaws.com/prod
-VITE_USE_MOCK=false
-VITE_COGNITO_USER_POOL_ID=us-east-1_XXXXXXX
-VITE_COGNITO_CLIENT_ID=XXXXXXXXXXXXXXXXXXXX
-```
-
-### 3. Deploy frontend to AWS Amplify Hosting
-
-Option A: **Amplify Console (GUI)**
-1. Go to [AWS Amplify Console](https://console.aws.amazon.com/amplify).
-2. Create a new app → "Host web app".
-3. Connect your Git repo (or drag-and-drop the `frontend/` folder for manual deploy).
-4. Set build command: `npm run build`, output dir: `dist`.
-5. Add environment variables from your `.env` file.
-
-Option B: **Amplify CLI**
-```powershell
-npm install -g @aws-amplify/cli
+```bash
 cd frontend
-amplify init
-amplify add hosting
-amplify publish
+
+# Install dependencies
+npm install
+
+# Setup environment
+cp .env.example .env
+
+# Start development server
+npm run dev
+
+# Application runs on http://localhost:3000
 ```
 
----
+## 🗺️ Key Features
 
-## API Endpoints
+### H3 Hexagonal Grid System
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/posts?tileId=...` | None | Fetch posts for a tile |
-| GET | `/posts?tiles=...` | None | Fetch posts for multiple tiles (comma-sep) |
-| POST | `/posts` | JWT | Create a new post |
-| GET | `/posts/{postId}/comments` | None | Fetch comments for a post |
-| POST | `/posts/{postId}/comments` | JWT | Add a comment |
-| POST | `/presign` | JWT | Get presigned S3 upload URL |
-| GET | `/profile/{userId}` | JWT | Get user profile |
+- **Resolution 8 hexagons** (~5 km per side)
+- **Automatic workspace creation** when users click on a hexagon
+- **K-ring queries** for fetching nearby regions
+- **Efficient spatial queries** using PostgreSQL + Prisma
+- **Real-time visualization** of H3 cells on interactive map
 
----
+### User Authentication
 
-## Tile Calculation (Web Mercator)
+- JWT-based authentication
+- Secure password hashing with bcryptjs
+- Token refresh strategy
+- Protected API endpoints
 
-```javascript
-const R = 6378137.0; // Earth radius in meters
-function tileIdFromLatLon(lat, lon, tileSize = 5000) {
-  const x = (lon * Math.PI / 180) * R;
-  const y = R * Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI / 180) / 2));
-  return `tile_${Math.floor(x / tileSize)}_${Math.floor(y / tileSize)}`;
-}
+### Geospatial Features
+
+- Zoom-dependent H3 grid rendering
+- User location tracking via geolocation API
+- Hexagon boundary visualization
+- Member status indicators (green for membership)
+- Automatic region joining on click
+
+### Real-Time Updates
+
+- Socket.io WebSocket connections
+- Room-based broadcasting by H3 region
+- Real-time post notifications
+- Presence detection
+- Pub/sub updates via Redis
+
+### Post Management
+
+- Create posts within regions
+- Membership verification
+- Fetch posts with pagination
+- Nearby region post queries
+- Post deletion with authorization
+
+## 🔌 API Endpoints
+
+### Authentication
+
+```
+POST   /auth/register
+POST   /auth/login
 ```
 
+### Workspaces
+
+```
+GET    /workspaces/latlng-to-h3              # Convert coordinates to H3
+POST   /workspaces/h3/:h3Index              # Get/create workspace
+GET    /workspaces/h3/:h3Index              # Get workspace
+GET    /workspaces/nearby/:h3Index          # Get nearby workspaces
+GET    /workspaces/boundaries/:h3Index      # Get H3 cell boundaries
+POST   /workspaces/join/:h3Index            # Join region
+GET    /workspaces/check-membership/:h3Index # Check membership
+GET    /workspaces/my-regions               # Get user's regions
+```
+
+### Posts
+
+```
+POST   /posts/:h3Index                      # Create post
+GET    /posts/:h3Index                      # Get region posts
+GET    /posts/nearby/:h3Index               # Get nearby posts
+DELETE /posts/:postId                       # Delete post
+```
+
+### WebSocket Events (Socket.io)
+
+```
+subscribe-region      # Subscribe to region updates
+unsubscribe-region    # Unsubscribe from region
+post-message          # Post to region
+new-post              # Receive new post
+get-active-regions    # Get user's active regions
+```
+
+## 📊 Database Schema
+
+### Models
+
+**User**
+- id, email, password, name, avatar
+- Relations: posts, regions
+
+**Workspace**
+- id, h3Index (unique), name, description
+- Relations: posts, members
+
+**Post**
+- id, content, userId, workspaceId, timestamps
+- Relations: user, workspace
+
+**RegionMembership**
+- id, userId, workspaceId, latitude, longitude
+- Unique constraint: (userId, workspaceId)
+
+## 🔐 Environment Variables
+
+### Backend (.env)
+
+```env
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/hyperlocal_db
+REDIS_HOST=localhost
+REDIS_PORT=6379
+JWT_SECRET=your-secret-key
+JWT_EXPIRATION=7d
+PORT=3001
+NODE_ENV=development
+FRONTEND_URL=http://localhost:3000
+H3_RESOLUTION=8
+```
+
+### Frontend (.env.local)
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:3001
+NODE_ENV=development
+```
+
+## 🐳 Docker Deployment
+
+### Build and Run
+
+```bash
+# Build all images
+docker-compose build
+
+# Start services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
+```
+
+### Service Health
+
+```bash
+# Check service status
+docker-compose ps
+
+# View specific service logs
+docker-compose logs backend
+docker-compose logs frontend
+```
+
+## 🔄 Database Migrations
+
+```bash
+# Create migration
+docker exec hyperlocal-backend npm run prisma:migrate
+
+# View database
+docker exec hyperlocal-backend npm run prisma:studio
+
+# Generate Prisma types
+docker exec hyperlocal-backend npm run prisma:generate
+```
+
+## 🌐 Nginx Configuration
+
+The nginx.conf provides:
+- **Rate limiting** for API and general endpoints
+- **Gzip compression** for static assets
+- **WebSocket proxy** for Socket.io
+- **Static file caching** (60 days for assets)
+- **Load balancing** across services
+- **Health checks** and monitoring
+
+## 📈 Performance Optimization
+
+- **Redis caching** for workspace queries (5-minute TTL)
+- **Pagination** for post fetching
+- **H3 cell sampling** for map rendering
+- **Connection pooling** via Prisma
+- **Nginx gzip compression** for frontend assets
+- **Docker layer caching** for faster builds
+
+## 🧪 Testing
+
+```bash
+# Backend tests
+cd backend
+npm run test
+
+# Frontend tests
+cd frontend
+npm run test
+```
+
+## 🔗 API Documentation
+
+### Create Post Example
+
+```bash
+curl -X POST http://localhost:3001/posts/8a794627fffffff \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{"content": "Hello from my region!"}'
+```
+
+### Get Nearby Posts
+
+```bash
+curl -X GET "http://localhost:3001/posts/nearby/8a794627fffffff?ringSize=1&limit=100" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+## 🚀 Scaling Considerations
+
+- **PostgreSQL**: Connection pooling, read replicas
+- **Redis**: Cluster mode for high availability
+- **Backend**: Horizontal scaling with Docker Swarm or Kubernetes
+- **Frontend**: CDN distribution for static assets
+- **Nginx**: Load balancer configuration for multiple backend instances
+
+## 📝 License
+
+MIT
+
+## 🤝 Contributing
+
+Contributions are welcome! Please follow:
+1. Create feature branch (`git checkout -b feature/AmazingFeature`)
+2. Commit changes (`git commit -m 'Add AmazingFeature'`)
+3. Push to branch (`git push origin feature/AmazingFeature`)
+4. Open a Pull Request
+
+## ❓ Support & Issues
+
+For issues and questions:
+- GitHub Issues: [Create an issue](https://github.com/Nikhlesh16/cheverywhayer/issues)
+- Email: support@hyperlocal.dev
+
 ---
 
-## Features
-
-- **Map View**: Full-screen Leaflet + OpenStreetMap with click-to-select tile.
-- **Feed Panel**: View posts in selected tile; toggle to show 3×3 nearby tiles.
-- **Composer**: Create posts with optional image upload (presigned S3 URL).
-- **Comments**: Expand any post to view/add comments.
-- **Auth**: Cognito email/password sign-up, sign-in, confirmation flow.
-- **Rate Limiting**: Frontend limits posting to 5 per minute per user.
-
----
-
-## Future Enhancements
-
-- Mobile app (React Native) sharing same backend.
-- Push notifications via SNS.
-- Real-time updates via WebSockets (API Gateway WebSocket API).
-- User profiles with display names and avatars.
-- Moderation / reporting tools.
-
----
-
-## License
-
-MIT — feel free to adapt for your community!
+**Built with ❤️ by Nikhlesh16**

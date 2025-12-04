@@ -1,0 +1,30 @@
+# Backend Dockerfile
+FROM node:20-slim
+
+WORKDIR /app
+
+# Install OpenSSL
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
+# Copy package files
+COPY backend/package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy source code
+COPY backend/src ./src
+COPY backend/prisma ./prisma
+COPY backend/tsconfig.json ./
+
+# Generate Prisma client
+RUN npm run prisma:generate
+
+# Build
+RUN npm run build
+
+# Expose port
+EXPOSE 3001
+
+# Start application
+CMD ["npm", "run", "start:prod"]

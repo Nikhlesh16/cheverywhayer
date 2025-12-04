@@ -1,49 +1,116 @@
 # Dependencies
 node_modules/
+*.pnp
+.pnp.js
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
+
+# Testing
+/coverage
+*.lcov
+.nyc_output
+
+# Production
+/dist
+/build
+/.next
+/out
+
+# Misc
+.DS_Store
+*.pem
 
 # Environment variables
 .env
 .env.local
 .env.*.local
+.env.development
+.env.production
+.env.test
+*.env
 
-# Build outputs
-dist/
-build/
-.next/
-out/
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
 
-# IDE & Editor
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-.DS_Store
-*.sublime-project
-*.sublime-workspace
+*.sublime-*
+
+# OS
+Thumbs.db
+Desktop.ini
+.Spotlight-V100
+.Trashes
+
+# Docker
+.docker/
+docker-compose.override.yml
 
 # Logs
 logs/
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
-# AWS SAM
-.aws-sam/
-samconfig.toml
-sam-tests/
+# Prisma
+prisma/migrations/
 
-# DynamoDB local
-dynamodb_local_latest.tar.gz
+# Uploads
+backend/uploads/
+uploads/
 
-# Mac
-.DS_Store
-Thumbs.db
-
-# Misc
-*.bak
+# Cache
 .cache/
+.parcel-cache/
+.turbo/
+*.tsbuildinfo
+.eslintcache
+
+# TypeScript
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Next.js
+.next/
+out/
+.vercel
+
+# Python (if any)
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Data files (local development)
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets
+*.key
+*.pem
+secrets/
+
+# Test artifacts
+test-results/
+playwright-report/
+.playwright/
+
+# Miscellaneous
+*.bak
+*.backup
+*~
