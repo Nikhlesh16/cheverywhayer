@@ -10,13 +10,15 @@ export const useSocket = () => {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    const socketUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    // Use WS_URL if provided, otherwise fallback to API_URL
+    const socketUrl = process.env.NEXT_PUBLIC_WS_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
     const newSocket = io(socketUrl, {
       auth: { token },
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       reconnectionAttempts: 5,
+      transports: ['websocket', 'polling'], // Try WebSocket first, fallback to polling
     });
 
     newSocket.on('connect', () => {

@@ -16,12 +16,20 @@ model User {
   password  String
   name      String?
   avatar    String?    // Profile photo URL
+  reliabilityScore Float  @default(50.0) // Reliability score (0-100)
+  totalViews       Int    @default(0)    // Total post views for normalization
+  totalLikes       Int    @default(0)    // Total likes received
+  totalDislikes    Int    @default(0)    // Total dislikes received
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
   // Relations
   regions   RegionMembership[]
   posts     Post[]
+  reactions PostReaction[]
+  sentMessages     Message[] @relation("SentMessages")
+  receivedMessages Message[] @relation("ReceivedMessages")
+  conversations    ConversationParticipant[]
 
   @@map("users")
 }
@@ -51,6 +59,9 @@ model Post {
   locationName String? // Optional location name/address
   replyToId   String?  // ID of post being replied to
   isDeleted   Boolean  @default(false) // Soft delete
+  viewCount   Int      @default(0)     // Track views for engagement metrics
+  likeCount   Int      @default(0)     // Cached like count
+  dislikeCount Int     @default(0)     // Cached dislike count
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -63,11 +74,31 @@ model Post {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   replyTo   Post?    @relation("PostReplies", fields: [replyToId], references: [id], onDelete: SetNull)
   replies   Post[]   @relation("PostReplies")
+  reactions PostReaction[]
 
   @@index([userId])
   @@index([workspaceId])
   @@index([replyToId])
   @@map("posts")
+}
+
+model PostReaction {
+  id        String   @id @default(cuid())
+  type      String   // 'like' or 'dislike'
+  createdAt DateTime @default(now())
+  
+  // Foreign keys
+  userId    String
+  postId    String
+  
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, postId]) // One reaction per user per post
+  @@index([postId])
+  @@index([userId])
+  @@map("post_reactions")
 }
 
 model RegionMembership {
@@ -90,4 +121,53 @@ model RegionMembership {
   @@index([userId])
   @@index([workspaceId])
   @@map("region_memberships")
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String
+  lastReadAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  // Relations
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@index([conversationId])
+  @@map("conversation_participants")
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  content        String
+  conversationId String
+  senderId       String
+  receiverId     String
+  isRead         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  // Relations
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver     User         @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([receiverId])
+  @@map("messages")
 }

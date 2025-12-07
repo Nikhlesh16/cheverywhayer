@@ -536,6 +536,7 @@ export class WorkspacesService {
 
     return members.map((m) => ({
       id: m.user.id,
+      username: m.user.name, // Use 'username' for frontend compatibility
       name: m.user.name,
       email: m.user.email,
       avatar: m.user.avatar,

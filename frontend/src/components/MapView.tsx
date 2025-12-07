@@ -6,6 +6,7 @@ import L from 'leaflet';
 import * as h3 from 'h3-js';
 import { useRegionStore } from '@/store/region';
 import api from '@/lib/api';
+import LocationSearch from './LocationSearch';
 
 interface MapViewProps {
   defaultLat?: number;
@@ -102,7 +103,7 @@ const MapEventListener = ({ onBoundsChange }: { onBoundsChange: (bounds: any) =>
 };
 
 export default function MapView({ defaultLat = 20, defaultLng = 0, defaultZoom = 4 }: MapViewProps) {
-  const { selectedRegion, userLocation, setSelectedRegion, setUserLocation } = useRegionStore();
+  const { selectedRegion, userLocation, setSelectedRegion, setUserLocation, joinedWorkspaces } = useRegionStore();
   const [h3Cells, setH3Cells] = useState<H3Cell[]>([]);
 
   useEffect(() => {
@@ -169,11 +170,13 @@ export default function MapView({ defaultLat = 20, defaultLng = 0, defaultZoom =
             }).filter((b: { lat: number; lng: number }) => b.lat !== 0 || b.lng !== 0);
             
             if (boundaries.length > 0) {
+              // Check if user is a member of this workspace
+              const isMember = joinedWorkspaces.some(jw => jw.workspace?.h3Index === h3Index);
               cells.push({
                 h3Index,
                 boundaries,
                 isSelected: h3Index === selectedRegion,
-                isMember: false,
+                isMember,
               });
             }
           }
@@ -223,6 +226,7 @@ export default function MapView({ defaultLat = 20, defaultLng = 0, defaultZoom =
         style={{ height: '100%', width: '100%' }}
       >
         <MapEventListener onBoundsChange={handleMapBounds} />
+        <LocationSearch />
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>'

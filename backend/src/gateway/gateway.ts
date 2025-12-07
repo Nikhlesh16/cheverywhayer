@@ -17,7 +17,17 @@ import { PostsService } from '../posts/posts.service';
 @Injectable()
 @WebSocketGateway({
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: (origin, callback) => {
+      const allowedOrigins = process.env.CORS_ORIGINS 
+        ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
+        : ['http://localhost:3000'];
+      
+      if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
   },
 })
@@ -161,5 +171,39 @@ export class EventGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } catch (error) {
       return { success: false, error: error.message };
     }
+  }
+
+  /**
+   * Send direct message to a user
+   */
+  @SubscribeMessage('send-dm')
+  async sendDirectMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { receiverId: string; content: string },
+  ) {
+    const senderId = client.data.userId;
+    const { receiverId, content } = data;
+
+    // Emit to receiver's sockets
+    const receiverSockets = this.userSockets.get(receiverId) || [];
+    receiverSockets.forEach((socketId) => {
+      this.server.to(socketId).emit('new-dm', {
+        senderId,
+        content,
+        timestamp: new Date(),
+      });
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * Emit direct message to specific user
+   */
+  emitToUser(userId: string, event: string, data: any) {
+    const sockets = this.userSockets.get(userId) || [];
+    sockets.forEach((socketId) => {
+      this.server.to(socketId).emit(event, data);
+    });
   }
 }

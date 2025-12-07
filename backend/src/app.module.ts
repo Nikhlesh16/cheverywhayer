@@ -12,6 +12,8 @@ import { RegionsModule } from './regions/regions.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { RedisModule } from './redis/redis.module';
 import { UploadModule } from './upload/upload.module';
+import { ReputationModule } from './reputation/reputation.module';
+import { MessagesModule } from './messages/messages.module';
 
 @Module({
   imports: [
@@ -36,6 +38,8 @@ import { UploadModule } from './upload/upload.module';
     RegionsModule,
     GatewayModule,
     UploadModule,
+    ReputationModule,
+    MessagesModule,
   ],
 })
 export class AppModule {}

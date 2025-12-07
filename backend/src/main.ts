@@ -13,13 +13,39 @@ async function bootstrap() {
     }),
   );
 
+  // Support multiple CORS origins for multi-cloud deployment
+  const allowedOrigins = process.env.CORS_ORIGINS 
+    ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
+    : ['http://localhost:3000'];
+
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, Postman)
+      if (!origin) return callback(null, true);
+      
+      // Check if origin is in allowed list or matches wildcard
+      const isAllowed = allowedOrigins.some(allowed => {
+        if (allowed === '*') return true;
+        if (allowed.includes('*')) {
+          const pattern = new RegExp('^' + allowed.replace(/\*/g, '.*') + '$');
+          return pattern.test(origin);
+        }
+        return allowed === origin;
+      });
+      
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
   });
 
-  await app.listen(process.env.PORT || 3001);
-  console.log(`✓ Backend running on http://localhost:${process.env.PORT || 3001}`);
+  const port = process.env.PORT || 3001;
+  await app.listen(port, '0.0.0.0'); // Bind to all interfaces for cloud deployment
+  console.log(`✓ Backend running on port ${port}`);
+  console.log(`✓ CORS enabled for: ${allowedOrigins.join(', ')}`);
 }
 
 bootstrap();

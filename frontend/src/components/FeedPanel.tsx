@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRegionStore, Workspace, JoinedWorkspace } from '@/store/region';
 import { useSocket } from '@/hooks/useSocket';
+import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
 
 export interface Post {
@@ -22,6 +23,10 @@ export interface Post {
     avatar?: string;
   };
   createdAt: string;
+  likeCount?: number;
+  dislikeCount?: number;
+  viewCount?: number;
+  userReaction?: 'LIKE' | 'DISLIKE' | null;
   _count?: {
     replies: number;
   };
@@ -45,6 +50,7 @@ export default function FeedPanel() {
     removeJoinedWorkspace,
   } = useRegionStore();
   const { socket } = useSocket();
+  const { user: currentUser } = useAuthStore();
   const [posts, setPosts] = useState<Post[]>([]);
   const [workspace, setWorkspace] = useState<WorkspaceDetails | null>(null);
   const [newPostContent, setNewPostContent] = useState('');
@@ -74,6 +80,7 @@ export default function FeedPanel() {
   const [viewingReplies, setViewingReplies] = useState<string | null>(null);
   const [replies, setReplies] = useState<Post[]>([]);
   const [isLoadingReplies, setIsLoadingReplies] = useState(false);
+  const [postReactions, setPostReactions] = useState<Record<string, 'LIKE' | 'DISLIKE' | null>>({});
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -112,6 +119,17 @@ export default function FeedPanel() {
             postsData = postsResponse.data.posts;
           }
           setPosts(postsData);
+          
+          // Initialize reaction state from posts (convert to uppercase for frontend)
+          const reactions: Record<string, 'LIKE' | 'DISLIKE' | null> = {};
+          postsData.forEach((post) => {
+            reactions[post.id] = post.userReaction 
+              ? (post.userReaction.toUpperCase() as 'LIKE' | 'DISLIKE')
+              : null;
+            // Track view for each post
+            trackPostView(post.id);
+          });
+          setPostReactions(reactions);
 
           // Get custom name if exists
           try {
@@ -396,6 +414,77 @@ export default function FeedPanel() {
     }
   };
 
+  // Start DM conversation
+  const handleStartDM = async (userId: string) => {
+    try {
+      await api.post(`/messages/conversations/${userId}`);
+      alert('Conversation started! Check the DM panel in bottom-right corner.');
+    } catch (error) {
+      console.error('Error starting conversation:', error);
+    }
+  };
+
+  // Share workspace
+  const handleShareWorkspace = () => {
+    if (!selectedRegion) return;
+    const shareUrl = `${window.location.origin}?workspace=${selectedRegion}`;
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      alert('Workspace link copied to clipboard! Share it with others to invite them.');
+    }).catch((err) => {
+      console.error('Failed to copy:', err);
+      prompt('Copy this link to share the workspace:', shareUrl);
+    });
+  };
+
+  // Handle like/dislike reactions
+  const handleReaction = async (postId: string, reactionType: 'LIKE' | 'DISLIKE') => {
+    try {
+      const currentReaction = postReactions[postId];
+      const newReaction = currentReaction === reactionType ? null : reactionType;
+      
+      // Optimistic update
+      setPostReactions((prev) => ({ ...prev, [postId]: newReaction }));
+      
+      // Update post counts optimistically
+      const updatePostCounts = (post: Post) => {
+        if (post.id !== postId) return post;
+        
+        let likeCount = post.likeCount || 0;
+        let dislikeCount = post.dislikeCount || 0;
+        
+        // Remove previous reaction
+        if (currentReaction === 'LIKE') likeCount = Math.max(0, likeCount - 1);
+        if (currentReaction === 'DISLIKE') dislikeCount = Math.max(0, dislikeCount - 1);
+        
+        // Add new reaction
+        if (newReaction === 'LIKE') likeCount++;
+        if (newReaction === 'DISLIKE') dislikeCount++;
+        
+        return { ...post, likeCount, dislikeCount, userReaction: newReaction };
+      };
+      
+      setPosts((prevPosts) => prevPosts.map(updatePostCounts));
+      setReplies((prevReplies) => prevReplies.map(updatePostCounts));
+      
+      // Send to backend (lowercase for backend compatibility)
+      const type = newReaction?.toLowerCase() as 'like' | 'dislike' | null;
+      await api.post(`/reputation/react/${postId}`, { type });
+    } catch (error) {
+      console.error('Error updating reaction:', error);
+      // Revert on error
+      setPostReactions((prev) => ({ ...prev, [postId]: prev[postId] }));
+    }
+  };
+
+  // Track post view
+  const trackPostView = async (postId: string) => {
+    try {
+      await api.post(`/reputation/view/${postId}`);
+    } catch (error) {
+      // Silent fail for view tracking
+    }
+  };
+
   const handleCreatePost = async () => {
     if (!selectedRegion || (!newPostContent.trim() && !selectedImage) || !workspace) return;
 
@@ -548,35 +637,105 @@ export default function FeedPanel() {
 
             {/* Actions */}
             {!isReply && (
-              <div className="mt-2 flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  onClick={() => setReplyingTo(post)}
-                  className="text-xs text-gray-500 hover:text-blue-600 flex items-center gap-1"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                  </svg>
-                  Reply
-                </button>
-
-                {(post._count?.replies || 0) > 0 && (
+              <div className="mt-2 flex items-center gap-3">
+                {/* Like/Dislike Buttons - Always visible */}
+                <div className="flex items-center gap-2">
                   <button
-                    onClick={() => loadReplies(post.id)}
-                    className="text-xs text-gray-500 hover:text-blue-600"
+                    onClick={() => handleReaction(post.id, 'LIKE')}
+                    disabled={post.user?.id === currentUser?.id}
+                    className={`flex items-center gap-1 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                      postReactions[post.id] === 'LIKE'
+                        ? 'text-green-600 font-semibold'
+                        : 'text-gray-500 hover:text-green-600'
+                    }`}
                   >
-                    {post._count?.replies} {post._count?.replies === 1 ? 'reply' : 'replies'}
+                    <svg
+                      className="w-4 h-4"
+                      fill={postReactions[post.id] === 'LIKE' ? 'currentColor' : 'none'}
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"
+                      />
+                    </svg>
+                    {post.likeCount || 0}
                   </button>
-                )}
 
-                <button
-                  onClick={() => handleDeletePost(post.id)}
-                  className="text-xs text-gray-500 hover:text-red-600 flex items-center gap-1"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                  Delete
-                </button>
+                  <button
+                    onClick={() => handleReaction(post.id, 'DISLIKE')}
+                    disabled={post.user?.id === currentUser?.id}
+                    className={`flex items-center gap-1 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                      postReactions[post.id] === 'DISLIKE'
+                        ? 'text-red-600 font-semibold'
+                        : 'text-gray-500 hover:text-red-600'
+                    }`}
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill={postReactions[post.id] === 'DISLIKE' ? 'currentColor' : 'none'}
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76.94m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.904 0-.715.211-1.413.608-2.008L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5"
+                      />
+                    </svg>
+                    {post.dislikeCount || 0}
+                  </button>
+                </div>
+
+                {/* Other actions - show on hover */}
+                <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => setReplyingTo(post)}
+                    className="text-xs text-gray-500 hover:text-blue-600 flex items-center gap-1"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                    </svg>
+                    Reply
+                  </button>
+
+                  {(post._count?.replies || 0) > 0 && (
+                    <button
+                      onClick={() => loadReplies(post.id)}
+                      className="text-xs text-gray-500 hover:text-blue-600"
+                    >
+                      {post._count?.replies} {post._count?.replies === 1 ? 'reply' : 'replies'}
+                    </button>
+                  )}
+
+                  {post.user?.id !== currentUser?.id && (
+                    <button
+                      onClick={() => handleStartDM(post.user.id)}
+                      className="text-xs text-gray-500 hover:text-blue-600 flex items-center gap-1"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
+                      Message
+                    </button>
+                  )}
+
+                  {post.user?.id === currentUser?.id && (
+                    <button
+                      onClick={() => handleDeletePost(post.id)}
+                      className="text-xs text-gray-500 hover:text-red-600 flex items-center gap-1"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Delete
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -860,23 +1019,35 @@ export default function FeedPanel() {
           </div>
 
           {/* Join/Leave Button */}
-          {workspace?.isMember ? (
+          <div className="flex gap-2">
             <button
-              onClick={handleLeaveWorkspace}
-              disabled={isLeaving}
-              className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors"
+              onClick={handleShareWorkspace}
+              className="px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors flex items-center gap-1"
+              title="Share workspace"
             >
-              {isLeaving ? 'Leaving...' : 'Leave'}
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+              </svg>
+              Share
             </button>
-          ) : (
-            <button
-              onClick={handleJoinWorkspace}
-              disabled={isJoining}
-              className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
-              {isJoining ? 'Joining...' : 'Join'}
-            </button>
-          )}
+            {workspace?.isMember ? (
+              <button
+                onClick={handleLeaveWorkspace}
+                disabled={isLeaving}
+                className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors"
+              >
+                {isLeaving ? 'Leaving...' : 'Leave'}
+              </button>
+            ) : (
+              <button
+                onClick={handleJoinWorkspace}
+                disabled={isJoining}
+                className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {isJoining ? 'Joining...' : 'Join'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

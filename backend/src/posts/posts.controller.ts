@@ -21,15 +21,17 @@ export class PostsController {
   }
 
   /**
-   * Get posts for a region (no auth required - public)
+   * Get posts for a region (optional auth for reaction status)
    */
   @Get(':h3Index')
   async getPostsByH3Index(
     @Param('h3Index') h3Index: string,
     @Query('limit') limit: string = '50',
     @Query('offset') offset: string = '0',
+    @Request() req?,
   ) {
-    return this.postsService.getPostsByH3Index(h3Index, parseInt(limit), parseInt(offset));
+    const userId = req?.user?.id;
+    return this.postsService.getPostsByH3Index(h3Index, userId, parseInt(limit), parseInt(offset));
   }
 
   /**
@@ -54,11 +56,12 @@ export class PostsController {
   }
 
   /**
-   * Get replies to a post
+   * Get replies to a post (optional auth for reaction status)
    */
   @Get('replies/:postId')
-  async getReplies(@Param('postId') postId: string) {
-    return this.postsService.getReplies(postId);
+  async getReplies(@Param('postId') postId: string, @Request() req?) {
+    const userId = req?.user?.id;
+    return this.postsService.getReplies(postId, userId);
   }
 
   /**

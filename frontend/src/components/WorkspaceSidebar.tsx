@@ -14,9 +14,9 @@ interface WorkspaceItemProps {
 const WorkspaceItem = ({ item, isActive, onClick, onPin }: WorkspaceItemProps) => {
   const { workspace, unreadCount, isPinned, customName } = item;
   // Use custom name if set, otherwise fall back to workspace name
-  const displayName = customName || workspace.name || `Region ${workspace.h3Index?.slice(0, 6)}`;
-  const initials = displayName.slice(0, 2).toUpperCase();
-  const bgColor = workspace.color || '#3B82F6';
+  const displayName = customName || workspace?.name || `Region ${workspace?.h3Index?.slice(0, 6) || 'Unknown'}`;
+  const initials = (displayName || 'WS').slice(0, 2).toUpperCase();
+  const bgColor = workspace?.color || '#3B82F6';
 
   return (
     <div
@@ -143,9 +143,13 @@ export default function WorkspaceSidebar() {
     }
   };
 
-  // Separate pinned and unpinned workspaces
-  const pinnedWorkspaces = joinedWorkspaces.filter((w) => w.isPinned);
-  const unpinnedWorkspaces = joinedWorkspaces.filter((w) => !w.isPinned);
+  // Separate pinned and unpinned workspaces, sort by most recent activity
+  const pinnedWorkspaces = joinedWorkspaces
+    .filter((w) => w.isPinned)
+    .sort((a, b) => new Date(b.lastVisitedAt).getTime() - new Date(a.lastVisitedAt).getTime());
+  const unpinnedWorkspaces = joinedWorkspaces
+    .filter((w) => !w.isPinned)
+    .sort((a, b) => new Date(b.lastVisitedAt).getTime() - new Date(a.lastVisitedAt).getTime());
 
   return (
     <div className="h-full flex flex-col bg-white border-r border-gray-200">

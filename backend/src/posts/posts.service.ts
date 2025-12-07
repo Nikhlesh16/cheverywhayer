@@ -76,7 +76,7 @@ export class PostsService {
   /**
    * Get posts for a region (chronological order - oldest first for chat-like display)
    */
-  async getPostsByH3Index(h3Index: string, limit: number = 50, offset: number = 0) {
+  async getPostsByH3Index(h3Index: string, userId?: string, limit: number = 50, offset: number = 0) {
     const workspace = await this.prisma.workspace.findUnique({
       where: { h3Index },
     });
@@ -109,6 +109,10 @@ export class PostsService {
             },
           },
         },
+        reactions: userId ? {
+          where: { userId },
+          select: { type: true },
+        } : false,
         _count: {
           select: { replies: true },
         },
@@ -118,6 +122,18 @@ export class PostsService {
       skip: offset,
     });
 
+    // Transform posts to include reaction counts and user reaction
+    const postsWithReactions = posts.map((post) => ({
+      ...post,
+      likeCount: post.likeCount || 0,
+      dislikeCount: post.dislikeCount || 0,
+      viewCount: post.viewCount || 0,
+      userReaction: userId && Array.isArray(post.reactions) && post.reactions.length > 0
+        ? post.reactions[0].type
+        : null,
+      reactions: undefined, // Remove reactions array from response
+    }));
+
     const total = await this.prisma.post.count({
       where: { 
         workspaceId: workspace.id,
@@ -126,7 +142,7 @@ export class PostsService {
     });
 
     return {
-      posts,
+      posts: postsWithReactions,
       total,
       limit,
       offset,
@@ -174,7 +190,7 @@ export class PostsService {
   /**
    * Get replies to a post
    */
-  async getReplies(postId: string) {
+  async getReplies(postId: string, userId?: string) {
     const replies = await this.prisma.post.findMany({
       where: {
         replyToId: postId,
@@ -189,11 +205,25 @@ export class PostsService {
             avatar: true,
           },
         },
+        reactions: userId ? {
+          where: { userId },
+          select: { type: true },
+        } : false,
       },
       orderBy: { createdAt: 'asc' },
     });
 
-    return replies;
+    // Transform replies to include reaction counts and user reaction
+    return replies.map((reply) => ({
+      ...reply,
+      likeCount: reply.likeCount || 0,
+      dislikeCount: reply.dislikeCount || 0,
+      viewCount: reply.viewCount || 0,
+      userReaction: userId && Array.isArray(reply.reactions) && reply.reactions.length > 0
+        ? reply.reactions[0].type
+        : null,
+      reactions: undefined,
+    }));
   }
 
   /**

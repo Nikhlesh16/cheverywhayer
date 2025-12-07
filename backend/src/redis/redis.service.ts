@@ -7,17 +7,28 @@ export class RedisService {
   private client: any;
 
   constructor(private configService: ConfigService) {
-    const host = this.configService.get('REDIS_HOST', 'localhost');
-    const port = this.configService.get('REDIS_PORT', 6379);
-    const password = this.configService.get('REDIS_PASSWORD', '');
+    // Support Redis URL (for Upstash, Railway, Render) or individual config
+    const redisUrl = this.configService.get('REDIS_URL');
+    
+    if (redisUrl) {
+      // Use Redis URL format: redis://username:password@host:port
+      this.client = createClient({
+        url: redisUrl,
+      });
+    } else {
+      // Fallback to individual config for local development
+      const host = this.configService.get('REDIS_HOST', 'localhost');
+      const port = this.configService.get('REDIS_PORT', 6379);
+      const password = this.configService.get('REDIS_PASSWORD', '');
 
-    this.client = createClient({
-      socket: {
-        host,
-        port,
-      },
-      password: password || undefined,
-    });
+      this.client = createClient({
+        socket: {
+          host,
+          port,
+        },
+        password: password || undefined,
+      });
+    }
 
     this.client.on('error', (err) => {
       console.error('Redis Client Error', err);
