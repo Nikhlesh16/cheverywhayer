@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { MapContainer, TileLayer, Polygon, Popup, useMap, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import * as h3 from 'h3-js';
@@ -14,7 +14,8 @@ interface MapViewProps {
   defaultZoom?: number;
 }
 
-const H3_RESOLUTION = 8;
+// Reduced from 8 to 7 for better performance (larger hexagons = fewer cells)
+const H3_RESOLUTION = 7;
 
 interface H3Cell {
   h3Index: string;
@@ -30,8 +31,8 @@ const H3GridOverlay = ({ h3Cells, onCellClick }: { h3Cells: H3Cell[]; onCellClic
   useEffect(() => {
     const handleZoom = () => {
       const zoom = map.getZoom();
-      // Only show H3 cells when zoomed in enough (z >= 8)
-      if (zoom >= 8) {
+      // Only show H3 cells when zoomed in enough (z >= 7, reduced from 8)
+      if (zoom >= 7) {
         setDisplayedCells(h3Cells);
       } else {
         setDisplayedCells([]);
@@ -105,6 +106,8 @@ const MapEventListener = ({ onBoundsChange }: { onBoundsChange: (bounds: any) =>
 export default function MapView({ defaultLat = 20, defaultLng = 0, defaultZoom = 4 }: MapViewProps) {
   const { selectedRegion, userLocation, setSelectedRegion, setUserLocation, joinedWorkspaces } = useRegionStore();
   const [h3Cells, setH3Cells] = useState<H3Cell[]>([]);
+  const cellCacheRef = useRef<Map<string, H3Cell>>(new Map());
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Get user's geolocation
@@ -121,76 +124,105 @@ export default function MapView({ defaultLat = 20, defaultLng = 0, defaultZoom =
     }
   }, [setUserLocation]);
 
-  const handleMapBounds = (bounds: any) => {
-    try {
-      const zoom = bounds?.getZoom ? bounds.getZoom() : 8;
-      if (zoom < 8) {
-        setH3Cells([]);
-        return;
-      }
+  const handleMapBounds = useCallback((bounds: any) => {
+    // Clear existing debounce timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
 
-      const ne = bounds?.getNorthEast ? bounds.getNorthEast() : { lat: defaultLat + 10, lng: defaultLng + 10 };
-      const sw = bounds?.getSouthWest ? bounds.getSouthWest() : { lat: defaultLat - 10, lng: defaultLng - 10 };
+    // Debounce map movements by 400ms
+    debounceTimerRef.current = setTimeout(() => {
+      try {
+        const zoom = bounds?.getZoom ? bounds.getZoom() : 8;
+        // Show cells at zoom 7 or higher (reduced from 8)
+        if (zoom < 7) {
+          setH3Cells([]);
+          return;
+        }
 
-      // Validate bounds
-      if (!ne || !sw || typeof ne.lat !== 'number' || typeof sw.lat !== 'number') {
-        setH3Cells([]);
-        return;
-      }
+        const ne = bounds?.getNorthEast ? bounds.getNorthEast() : { lat: defaultLat + 10, lng: defaultLng + 10 };
+        const sw = bounds?.getSouthWest ? bounds.getSouthWest() : { lat: defaultLat - 10, lng: defaultLng - 10 };
 
-      // Generate H3 cells for visible bounds
-      const cells: H3Cell[] = [];
+        // Validate bounds
+        if (!ne || !sw || typeof ne.lat !== 'number' || typeof sw.lat !== 'number') {
+          setH3Cells([]);
+          return;
+        }
 
-      // Sample cells in the visible area
-      for (let i = 0; i < 100; i++) {
-        const randomLat = sw.lat + Math.random() * (ne.lat - sw.lat);
-        const randomLng = sw.lng + Math.random() * (ne.lng - sw.lng);
+        // Generate H3 cells for visible bounds
+        const cells: H3Cell[] = [];
+        const newCells: H3Cell[] = [];
 
-        try {
-          const h3Index = h3.geoToH3(randomLat, randomLng, H3_RESOLUTION);
-          
-          // Validate h3Index
-          if (!h3Index || typeof h3Index !== 'string') {
-            continue;
-          }
-          
-          if (!cells.find((c) => c.h3Index === h3Index)) {
-            const boundary = h3.h3ToGeoBoundary(h3Index);
+        // Reduced from 100 to 30 samples for better performance
+        for (let i = 0; i < 30; i++) {
+          const randomLat = sw.lat + Math.random() * (ne.lat - sw.lat);
+          const randomLng = sw.lng + Math.random() * (ne.lng - sw.lng);
+
+          try {
+            const h3Index = h3.geoToH3(randomLat, randomLng, H3_RESOLUTION);
             
-            // Ensure boundary is an array before mapping
-            if (!Array.isArray(boundary) || boundary.length === 0) {
+            // Validate h3Index
+            if (!h3Index || typeof h3Index !== 'string') {
               continue;
             }
             
-            const boundaries = boundary.map((coord: any) => {
-              if (Array.isArray(coord) && coord.length >= 2) {
-                return { lat: Number(coord[0]) || 0, lng: Number(coord[1]) || 0 };
-              }
-              return { lat: 0, lng: 0 };
-            }).filter((b: { lat: number; lng: number }) => b.lat !== 0 || b.lng !== 0);
-            
-            if (boundaries.length > 0) {
-              // Check if user is a member of this workspace
-              const isMember = joinedWorkspaces.some(jw => jw.workspace?.h3Index === h3Index);
-              cells.push({
-                h3Index,
-                boundaries,
-                isSelected: h3Index === selectedRegion,
-                isMember,
-              });
+            // Check cache first
+            if (cellCacheRef.current.has(h3Index)) {
+              const cachedCell = cellCacheRef.current.get(h3Index)!;
+              // Update selection/membership status
+              cachedCell.isSelected = h3Index === selectedRegion;
+              cachedCell.isMember = joinedWorkspaces.some(jw => jw.workspace?.h3Index === h3Index);
+              cells.push(cachedCell);
+              continue;
             }
+            
+            if (!cells.find((c) => c.h3Index === h3Index)) {
+              const boundary = h3.h3ToGeoBoundary(h3Index);
+              
+              // Ensure boundary is an array before mapping
+              if (!Array.isArray(boundary) || boundary.length === 0) {
+                continue;
+              }
+              
+              const boundaries = boundary.map((coord: any) => {
+                if (Array.isArray(coord) && coord.length >= 2) {
+                  return { lat: Number(coord[0]) || 0, lng: Number(coord[1]) || 0 };
+                }
+                return { lat: 0, lng: 0 };
+              }).filter((b: { lat: number; lng: number }) => b.lat !== 0 || b.lng !== 0);
+              
+              if (boundaries.length > 0) {
+                // Check if user is a member of this workspace
+                const isMember = joinedWorkspaces.some(jw => jw.workspace?.h3Index === h3Index);
+                const newCell: H3Cell = {
+                  h3Index,
+                  boundaries,
+                  isSelected: h3Index === selectedRegion,
+                  isMember,
+                };
+                cells.push(newCell);
+                newCells.push(newCell);
+              }
+            }
+          } catch (e) {
+            console.error('H3 cell generation error:', e);
           }
-        } catch (e) {
-          console.error('H3 cell generation error:', e);
         }
-      }
 
-      setH3Cells(cells);
-    } catch (e) {
-      console.error('handleMapBounds error:', e);
-      setH3Cells([]);
-    }
-  };
+        // Cache new cells (limit cache size to 500)
+        newCells.forEach(cell => {
+          if (cellCacheRef.current.size < 500) {
+            cellCacheRef.current.set(cell.h3Index, cell);
+          }
+        });
+
+        setH3Cells(cells);
+      } catch (e) {
+        console.error('handleMapBounds error:', e);
+        setH3Cells([]);
+      }
+    }, 400); // 400ms debounce
+  }, [selectedRegion, joinedWorkspaces, defaultLat, defaultLng]);
 
   const handleCellClick = async (h3Index: string) => {
     try {

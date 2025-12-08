@@ -20,11 +20,24 @@ import { PostsService } from '../posts/posts.service';
     origin: (origin, callback) => {
       const allowedOrigins = process.env.CORS_ORIGINS 
         ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
-        : ['http://localhost:3000'];
+        : ['http://localhost:3000', 'https://*.vercel.app'];
       
-      if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+      if (!origin) return callback(null, true);
+      
+      const isAllowed = allowedOrigins.some(allowed => {
+        if (allowed === '*') return true;
+        if (allowed.includes('*')) {
+          // Properly escape dots and convert * to .*
+          const pattern = new RegExp('^' + allowed.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$');
+          return pattern.test(origin);
+        }
+        return allowed === origin;
+      });
+      
+      if (isAllowed) {
         callback(null, true);
       } else {
+        console.warn(`⚠️  WebSocket CORS blocked: ${origin}`);
         callback(new Error('Not allowed by CORS'));
       }
     },

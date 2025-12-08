@@ -175,25 +175,50 @@ export default function FeedPanel() {
 
   // Subscribe to socket events for new posts
   useEffect(() => {
-    if (!socket) return;
+    if (!socket || !selectedRegion) return;
+
+    // Subscribe to the region room on backend
+    socket.emit('subscribe-region', { h3Index: selectedRegion });
 
     const handleNewPost = (data: any) => {
       try {
-        if (data && data.h3Index === selectedRegion && !data.replyToId) {
-          setPosts((prevPosts) => {
-            const currentPosts = Array.isArray(prevPosts) ? prevPosts : [];
-            // Add to end for chronological order (oldest first, newest at bottom)
-            return [...currentPosts, data];
-          });
+        console.log('📩 NEW POST RECEIVED:', {
+          postId: data?.id,
+          userId: data?.user?.id,
+          userName: data?.user?.name,
+          userEmail: data?.user?.email,
+          content: data?.content?.substring(0, 50)
+        });
+        
+        // Only add if it's not a reply and has proper user data
+        if (data && data.workspaceId && !data.replyToId) {
+          // Verify this post has proper user data from backend
+          if (data.user && data.user.id) {
+            setPosts((prevPosts) => {
+              const currentPosts = Array.isArray(prevPosts) ? prevPosts : [];
+              // Check if post already exists (avoid duplicates)
+              if (currentPosts.some(p => p.id === data.id)) {
+                return currentPosts;
+              }
+              // Add to end for chronological order
+              return [...currentPosts, data];
+            });
+          } else {
+            console.warn('⚠️ POST WITHOUT USER DATA:', data);
+          }
         }
       } catch (e) {
         console.error('Error handling new post:', e);
       }
     };
 
-    socket.on('post-message', handleNewPost);
+    // Listen to 'new-post' event broadcast by backend
+    socket.on('new-post', handleNewPost);
+    
     return () => {
-      socket.off('post-message', handleNewPost);
+      // Unsubscribe when leaving region
+      socket.emit('unsubscribe-region', { h3Index: selectedRegion });
+      socket.off('new-post', handleNewPost);
     };
   }, [socket, selectedRegion]);
 
@@ -488,6 +513,12 @@ export default function FeedPanel() {
   const handleCreatePost = async () => {
     if (!selectedRegion || (!newPostContent.trim() && !selectedImage) || !workspace) return;
 
+    console.log('🔑 Creating post with user:', {
+      userId: currentUser?.id,
+      userName: currentUser?.name,
+      userEmail: currentUser?.email
+    });
+
     setIsPosting(true);
     try {
       let imageUrl: string | undefined;
@@ -524,10 +555,8 @@ export default function FeedPanel() {
 
       const response = await api.post(`/posts/${selectedRegion}`, postData);
 
-      socket?.emit('post-message', {
-        h3Index: selectedRegion,
-        ...response.data,
-      });
+      // Backend will broadcast via WebSocket to all connected clients
+      // No need to emit from client side
 
       // If replying, add to replies list, otherwise add to posts
       if (replyingTo) {

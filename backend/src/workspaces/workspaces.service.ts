@@ -78,18 +78,37 @@ export class WorkspacesService {
     // If not found, create new workspace
     if (!workspace) {
       const tempId = h3Index; // Use h3Index for color generation before we have the real id
-      workspace = await this.prisma.workspace.create({
-        data: {
-          h3Index,
-          name: createDto?.name || `Region ${h3Index.slice(0, 8)}`,
-          description: createDto?.description,
-          color: this.generateWorkspaceColor(tempId),
-        },
-        include: {
-          members: true,
-          posts: true,
-        },
-      });
+      
+      try {
+        // Use upsert to handle race conditions
+        workspace = await this.prisma.workspace.upsert({
+          where: { h3Index },
+          create: {
+            h3Index,
+            name: createDto?.name || `Region ${h3Index.slice(0, 8)}`,
+            description: createDto?.description,
+            color: this.generateWorkspaceColor(tempId),
+          },
+          update: {}, // No update needed, just return existing
+          include: {
+            members: true,
+            posts: true,
+          },
+        });
+      } catch (error) {
+        // If upsert fails due to race condition, fetch the existing workspace
+        workspace = await this.prisma.workspace.findUnique({
+          where: { h3Index },
+          include: {
+            members: true,
+            posts: true,
+          },
+        });
+        
+        if (!workspace) {
+          throw error; // Re-throw if it's not a race condition
+        }
+      }
     }
 
     // Cache the workspace
@@ -308,24 +327,54 @@ export class WorkspacesService {
       return { message: 'Already a member', membership: existingMembership };
     }
 
-    // Create membership
-    const membership = await this.prisma.regionMembership.create({
-      data: {
-        userId,
-        workspaceId: workspace.id,
-        latitude: lat || 0,
-        longitude: lng || 0,
-        lastVisitedAt: new Date(),
-      },
-      include: {
-        workspace: true,
-      },
-    });
+    // Create membership using upsert to handle race conditions
+    try {
+      const membership = await this.prisma.regionMembership.upsert({
+        where: {
+          userId_workspaceId: {
+            userId,
+            workspaceId: workspace.id,
+          },
+        },
+        create: {
+          userId,
+          workspaceId: workspace.id,
+          latitude: lat || 0,
+          longitude: lng || 0,
+          lastVisitedAt: new Date(),
+        },
+        update: {
+          lastVisitedAt: new Date(), // Update last visited if already exists
+        },
+        include: {
+          workspace: true,
+        },
+      });
 
-    // Invalidate cache
-    await this.redis.del(`workspace:${h3Index}`);
+      // Invalidate cache
+      await this.redis.del(`workspace:${h3Index}`);
 
-    return { message: 'Successfully joined workspace', membership };
+      return { message: 'Successfully joined workspace', membership };
+    } catch (error) {
+      // If still fails, return the existing membership
+      const membership = await this.prisma.regionMembership.findUnique({
+        where: {
+          userId_workspaceId: {
+            userId,
+            workspaceId: workspace.id,
+          },
+        },
+        include: {
+          workspace: true,
+        },
+      });
+      
+      if (membership) {
+        return { message: 'Already a member', membership };
+      }
+      
+      throw error; // Re-throw if it's a different error
+    }
   }
 
   /**

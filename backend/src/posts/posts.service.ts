@@ -1,7 +1,8 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
+import { EventGateway } from '../gateway/gateway';
 import { CreatePostDto } from './dto/create-post.dto';
 
 @Injectable()
@@ -10,6 +11,8 @@ export class PostsService {
     private prisma: PrismaService,
     private redis: RedisService,
     private workspacesService: WorkspacesService,
+    @Inject(forwardRef(() => EventGateway))
+    private gateway: EventGateway,
   ) {}
 
   /**
@@ -67,8 +70,8 @@ export class PostsService {
     // Invalidate workspace cache
     await this.redis.del(`workspace:${h3Index}`);
 
-    // Publish to Redis channel for real-time updates
-    await this.redis.publish(`workspace:${h3Index}:posts`, JSON.stringify(post));
+    // Broadcast to all clients in the region via WebSocket
+    this.gateway.broadcastToRegion(h3Index, 'new-post', post);
 
     return post;
   }

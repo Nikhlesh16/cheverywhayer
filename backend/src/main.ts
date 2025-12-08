@@ -16,7 +16,7 @@ async function bootstrap() {
   // Support multiple CORS origins for multi-cloud deployment
   const allowedOrigins = process.env.CORS_ORIGINS 
     ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
-    : ['http://localhost:3000'];
+    : ['http://localhost:3000', 'https://*.vercel.app'];
 
   app.enableCors({
     origin: (origin, callback) => {
@@ -27,7 +27,8 @@ async function bootstrap() {
       const isAllowed = allowedOrigins.some(allowed => {
         if (allowed === '*') return true;
         if (allowed.includes('*')) {
-          const pattern = new RegExp('^' + allowed.replace(/\*/g, '.*') + '$');
+          // Properly escape dots and convert * to .*
+          const pattern = new RegExp('^' + allowed.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$');
           return pattern.test(origin);
         }
         return allowed === origin;
@@ -36,10 +37,13 @@ async function bootstrap() {
       if (isAllowed) {
         callback(null, true);
       } else {
+        console.warn(`⚠️  CORS blocked origin: ${origin}`);
         callback(new Error('Not allowed by CORS'));
       }
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   const port = process.env.PORT || 3001;
