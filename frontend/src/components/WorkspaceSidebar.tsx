@@ -100,6 +100,7 @@ export default function WorkspaceSidebar() {
     clearUnreadCount,
     isLoadingWorkspaces,
     setIsLoadingWorkspaces,
+    setMobileView,
   } = useRegionStore();
 
   // Fetch user's workspaces on mount
@@ -125,6 +126,11 @@ export default function WorkspaceSidebar() {
     setSelectedRegion(item.workspace.h3Index);
     setActiveWorkspace(item.workspace);
     clearUnreadCount(item.workspace.h3Index);
+
+    // Switch to feed view on mobile when a workspace is selected
+    if (window.innerWidth < 768) {
+      setMobileView('feed');
+    }
 
     // Update last visited on backend
     try {

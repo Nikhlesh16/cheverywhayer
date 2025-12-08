@@ -28,6 +28,7 @@ export interface RegionState {
   isLoadingWorkspaces: boolean;
   sidebarWidth: number;
   feedWidth: number;
+  mobileView: 'map' | 'workspaces' | 'feed';
 
   setSelectedRegion: (h3Index: string | null) => void;
   setActiveWorkspace: (workspace: Workspace | null) => void;
@@ -42,6 +43,7 @@ export interface RegionState {
   updateWorkspaceCustomName: (h3Index: string, customName: string | null) => void;
   setSidebarWidth: (width: number) => void;
   setFeedWidth: (width: number) => void;
+  setMobileView: (view: 'map' | 'workspaces' | 'feed') => void;
 }
 
 export const useRegionStore = create<RegionState>((set) => ({
@@ -52,6 +54,7 @@ export const useRegionStore = create<RegionState>((set) => ({
   isLoadingWorkspaces: false,
   sidebarWidth: 256, // default 16rem = 256px
   feedWidth: 384, // default 24rem = 384px
+  mobileView: 'map', // default to map view on mobile
 
   setSelectedRegion: (h3Index) => set({ selectedRegion: h3Index }),
   setActiveWorkspace: (workspace) => set({ activeWorkspace: workspace }),
@@ -60,6 +63,7 @@ export const useRegionStore = create<RegionState>((set) => ({
   setIsLoadingWorkspaces: (loading) => set({ isLoadingWorkspaces: loading }),
   setSidebarWidth: (width) => set({ sidebarWidth: Math.max(200, Math.min(400, width)) }),
   setFeedWidth: (width) => set({ feedWidth: Math.max(300, Math.min(600, width)) }),
+  setMobileView: (view) => set({ mobileView: view }),
   
   addJoinedWorkspace: (workspace) =>
     set((state) => ({
